@@ -11,193 +11,200 @@ interface McpToolDefinition {
 interface McpToolExport {
   tools: McpToolDefinition[];
   callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
+  meter?: { credits: number };
+  cost?: Record<string, unknown>;
+  provider?: string;
 }
 
 /**
- * PyPI MCP — wraps the PyPI JSON API (free, no auth)
+ * PyPI MCP — wraps the Python Package Index (PyPI) JSON API (free, no auth).
+ *
+ * Look up Python packages on PyPI: metadata, versions, dependencies, release
+ * artifacts (the files `pip install` downloads), and download statistics.
  *
  * Tools:
- * - search_packages: look up a package by name (PyPI has no keyword search API;
- *   this resolves the exact name via /pypi/{name}/json)
- * - get_package: fetch metadata for a specific package
- * - get_release: fetch metadata for a specific package version
+ * - get_package          — metadata for a Python package's latest release
+ * - get_package_version  — metadata + dependencies for a specific version
+ * - list_releases        — all published version strings for a package
+ * - get_download_stats   — recent download counts (via pypistats.org)
  */
 
 
 const BASE = 'https://pypi.org';
+const STATS_BASE = 'https://pypistats.org';
+const UA = 'pipeworx/1.0 (+https://pipeworx.io)';
+
+interface PypiUrl {
+  filename: string;
+  size: number;
+  packagetype: string;
+  upload_time_iso_8601: string;
+}
+
+interface PypiInfo {
+  name: string;
+  summary: string | null;
+  version: string;
+  author: string | null;
+  license: string | null;
+  home_page: string | null;
+  project_urls: Record<string, string> | null;
+  requires_python: string | null;
+  requires_dist: string[] | null;
+  keywords: string | null;
+  classifiers: string[] | null;
+}
+
+interface PypiResponse {
+  info: PypiInfo;
+  urls?: PypiUrl[];
+  releases: Record<string, unknown[]>;
+}
 
 const tools: McpToolExport['tools'] = [
   {
-    name: 'search_packages',
-    description:
-      'Look up a PyPI package by exact name. Returns the latest version, summary, author, license, and project URLs. Note: PyPI does not expose a keyword search API; use the exact package name.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        name: {
-          type: 'string',
-          description: 'Exact PyPI package name (e.g., "requests", "numpy")',
-        },
-      },
-      required: ['name'],
-    },
-  },
-  {
     name: 'get_package',
     description:
-      'Get full metadata for a PyPI package: latest version, summary, author, license, requires_python, project_urls, and recent release list.',
+      'Get metadata for a Python package on PyPI (the Python Package Index). Returns the latest version, summary, author, license, project URLs, required Python version, keywords, classifiers, and the release artifact files that `pip install` would download. Pass the exact pip package name (e.g. "requests", "numpy").',
     inputSchema: {
       type: 'object',
       properties: {
-        name: {
-          type: 'string',
-          description: 'PyPI package name',
-        },
+        name: { type: 'string', description: 'Exact PyPI package name, e.g. "requests".' },
       },
       required: ['name'],
     },
   },
   {
-    name: 'get_release',
+    name: 'get_package_version',
     description:
-      'Get metadata for a specific version of a PyPI package, including requires_python, upload time, and download URLs.',
+      'Get metadata for a specific version of a Python package on PyPI. Returns the summary, required Python version, the full dependency list (requires_dist, i.e. what pip would resolve), and the downloadable files for that version. Use to inspect a pinned release like requests 2.31.0.',
     inputSchema: {
       type: 'object',
       properties: {
-        name: {
-          type: 'string',
-          description: 'PyPI package name',
-        },
-        version: {
-          type: 'string',
-          description: 'Version string (e.g., "2.28.2")',
-        },
+        name: { type: 'string', description: 'Exact PyPI package name, e.g. "requests".' },
+        version: { type: 'string', description: 'Version string, e.g. "2.31.0".' },
       },
       required: ['name', 'version'],
     },
   },
+  {
+    name: 'list_releases',
+    description:
+      'List all published version strings for a Python package on PyPI, sorted, plus the latest version. Useful to see a package\'s release history or check which versions are available to pip install.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Exact PyPI package name, e.g. "requests".' },
+      },
+      required: ['name'],
+    },
+  },
+  {
+    name: 'get_download_stats',
+    description:
+      'Get recent download counts for a Python package (last day, last week, last month) from pypistats.org. Gauges how popular a pip package is.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Exact PyPI package name, e.g. "requests".' },
+      },
+      required: ['name'],
+    },
+  },
 ];
 
-async function pypiGet(path: string): Promise<unknown> {
-  const res = await fetch(`${BASE}${path}`);
+async function pyGet(url: string): Promise<unknown | { error: number; message: string }> {
+  const res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA } });
   if (!res.ok) {
-    if (res.status === 404) throw new Error(`Package not found: ${path}`);
-    throw new Error(`PyPI API error: ${res.status} ${res.statusText}`);
+    const text = await res.text().then((t) => t.slice(0, 200)).catch(() => '');
+    return { error: res.status, message: text || res.statusText };
   }
   return res.json();
 }
 
-function formatPackageInfo(data: {
-  info: {
-    name: string;
-    version: string;
-    summary: string | null;
-    author: string | null;
-    author_email: string | null;
-    license: string | null;
-    requires_python: string | null;
-    home_page: string | null;
-    project_urls: Record<string, string> | null;
-    classifiers: string[];
-    keywords: string | null;
-  };
-  releases: Record<string, unknown[]>;
-  urls: { filename: string; upload_time: string; url: string; packagetype: string }[];
-}) {
-  const { info } = data;
-  const recentVersions = Object.keys(data.releases)
-    .filter((v) => data.releases[v].length > 0)
-    .slice(-10)
-    .reverse();
-
-  return {
-    name: info.name,
-    version: info.version,
-    summary: info.summary ?? null,
-    author: info.author ?? null,
-    author_email: info.author_email ?? null,
-    license: info.license ?? null,
-    requires_python: info.requires_python ?? null,
-    home_page: info.home_page ?? null,
-    project_urls: info.project_urls ?? {},
-    keywords: info.keywords ?? null,
-    recent_versions: recentVersions,
-    latest_files: data.urls.map((u) => ({
-      filename: u.filename,
-      packagetype: u.packagetype,
-      upload_time: u.upload_time,
-      url: u.url,
-    })),
-  };
+function isError(v: unknown): v is { error: number; message: string } {
+  return typeof v === 'object' && v !== null && 'error' in v;
 }
 
-async function searchPackages(name: string) {
-  const data = (await pypiGet(`/pypi/${encodeURIComponent(name)}/json`)) as Parameters<
-    typeof formatPackageInfo
-  >[0];
-  return formatPackageInfo(data);
+function reqStr(args: Record<string, unknown>, key: string): string {
+  const v = args[key];
+  if (typeof v !== 'string' || !v.trim()) {
+    throw new Error(`Required argument "${key}" is missing. Pass a string, e.g. "requests".`);
+  }
+  return v.trim();
 }
 
-async function getPackage(name: string) {
-  const data = (await pypiGet(`/pypi/${encodeURIComponent(name)}/json`)) as Parameters<
-    typeof formatPackageInfo
-  >[0];
-  return formatPackageInfo(data);
-}
-
-async function getRelease(name: string, version: string) {
-  const data = (await pypiGet(
-    `/pypi/${encodeURIComponent(name)}/${encodeURIComponent(version)}/json`,
-  )) as {
-    info: {
-      name: string;
-      version: string;
-      summary: string | null;
-      author: string | null;
-      license: string | null;
-      requires_python: string | null;
-      requires_dist: string[] | null;
-    };
-    urls: {
-      filename: string;
-      packagetype: string;
-      upload_time: string;
-      size: number;
-      url: string;
-      digests: { sha256: string };
-    }[];
-  };
-
-  return {
-    name: data.info.name,
-    version: data.info.version,
-    summary: data.info.summary ?? null,
-    author: data.info.author ?? null,
-    license: data.info.license ?? null,
-    requires_python: data.info.requires_python ?? null,
-    requires_dist: data.info.requires_dist ?? [],
-    files: data.urls.map((u) => ({
-      filename: u.filename,
-      packagetype: u.packagetype,
-      upload_time: u.upload_time,
-      size: u.size,
-      url: u.url,
-      sha256: u.digests.sha256,
-    })),
-  };
+function mapFiles(urls: PypiUrl[] | undefined) {
+  return (urls ?? []).map((u) => ({
+    filename: u.filename,
+    size: u.size,
+    packagetype: u.packagetype,
+    upload_time: u.upload_time_iso_8601,
+  }));
 }
 
 async function callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
   switch (name) {
-    case 'search_packages':
-      return searchPackages(args.name as string);
-    case 'get_package':
-      return getPackage(args.name as string);
-    case 'get_release':
-      return getRelease(args.name as string, args.version as string);
+    case 'get_package': {
+      const pkg = reqStr(args, 'name');
+      const data = await pyGet(`${BASE}/pypi/${encodeURIComponent(pkg)}/json`);
+      if (isError(data)) return data;
+      const { info, urls } = data as PypiResponse;
+      return {
+        name: info.name,
+        summary: info.summary,
+        version: info.version,
+        author: info.author,
+        license: info.license,
+        home_page: info.home_page,
+        project_urls: info.project_urls,
+        requires_python: info.requires_python,
+        keywords: info.keywords,
+        classifiers: (info.classifiers ?? []).slice(0, 15),
+        latest_release_files: mapFiles(urls),
+      };
+    }
+    case 'get_package_version': {
+      const pkg = reqStr(args, 'name');
+      const version = reqStr(args, 'version');
+      const data = await pyGet(
+        `${BASE}/pypi/${encodeURIComponent(pkg)}/${encodeURIComponent(version)}/json`,
+      );
+      if (isError(data)) return data;
+      const { info, urls } = data as PypiResponse;
+      return {
+        name: info.name,
+        version: info.version,
+        summary: info.summary,
+        requires_python: info.requires_python,
+        requires_dist: info.requires_dist,
+        files: mapFiles(urls),
+      };
+    }
+    case 'list_releases': {
+      const pkg = reqStr(args, 'name');
+      const data = await pyGet(`${BASE}/pypi/${encodeURIComponent(pkg)}/json`);
+      if (isError(data)) return data;
+      const { info, releases } = data as PypiResponse;
+      let versions = Object.keys(releases).sort();
+      if (versions.length > 100) versions = versions.slice(-100);
+      return { name: info.name, latest: info.version, releases: versions };
+    }
+    case 'get_download_stats': {
+      const pkg = reqStr(args, 'name');
+      const data = await pyGet(`${STATS_BASE}/api/packages/${encodeURIComponent(pkg)}/recent`);
+      if (isError(data)) return data;
+      const d = data as { data: { last_day: number; last_week: number; last_month: number } };
+      return {
+        name: pkg,
+        last_day: d.data.last_day,
+        last_week: d.data.last_week,
+        last_month: d.data.last_month,
+      };
+    }
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
 }
 
-export default { tools, callTool } satisfies McpToolExport;
+export default { tools, callTool, meter: { credits: 1 } } satisfies McpToolExport;

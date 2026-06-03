@@ -1,8 +1,8 @@
 # mcp-pypi
 
-PyPI MCP — wraps the PyPI JSON API (free, no auth)
+PyPI MCP — wraps the Python Package Index (PyPI) JSON API (free, no auth).
 
-Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 673+ live data sources.
+Part of [Pipeworx](https://pipeworx.io) — an MCP gateway connecting AI agents to 725+ live data sources.
 
 ## Tools
 
@@ -23,7 +23,7 @@ Add to your MCP client (Claude Desktop, Cursor, Windsurf, etc.):
 }
 ```
 
-Or connect to the full Pipeworx gateway for access to all 673+ data sources:
+Or connect to the full Pipeworx gateway for access to all 725+ data sources:
 
 ```json
 {

@@ -1,8 +1,8 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.pipeworx-io/pypi",
-  "title": "pypi",
-  "description": "PyPI MCP — wraps the PyPI JSON API (free, no auth)",
+  "title": "Pypi",
+  "description": "PyPI MCP — wraps the Python Package Index (PyPI) JSON API (free, no auth).",
   "version": "0.1.0",
   "websiteUrl": "https://pipeworx.io/packs/pypi",
   "repository": {
