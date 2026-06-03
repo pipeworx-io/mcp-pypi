@@ -1,6 +1,6 @@
 {
   "name": "@pipeworx/mcp-pypi",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "PyPI MCP — wraps the Python Package Index (PyPI) JSON API (free, no auth).",
   "type": "module",
   "main": "src/index.ts",
