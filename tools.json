@@ -1,0 +1,71 @@
+[
+  {
+    "name": "get_package",
+    "description": "Get metadata for a Python package on PyPI (the Python Package Index). Returns the latest version, summary, author, license, project URLs, required Python version, keywords, classifiers, and the release artifact files that `pip install` would download. Pass the exact pip package name (e.g. \"requests\", \"numpy\").",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Exact PyPI package name, e.g. \"requests\"."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "get_package_version",
+    "description": "Get metadata for a specific version of a Python package on PyPI. Returns the summary, required Python version, the full dependency list (requires_dist, i.e. what pip would resolve), and the downloadable files for that version. Use to inspect a pinned release like requests 2.31.0.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Exact PyPI package name, e.g. \"requests\"."
+        },
+        "version": {
+          "type": "string",
+          "description": "Version string, e.g. \"2.31.0\"."
+        }
+      },
+      "required": [
+        "name",
+        "version"
+      ]
+    }
+  },
+  {
+    "name": "list_releases",
+    "description": "List all published version strings for a Python package on PyPI, sorted, plus the latest version. Useful to see a package's release history or check which versions are available to pip install.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Exact PyPI package name, e.g. \"requests\"."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  },
+  {
+    "name": "get_download_stats",
+    "description": "Get recent download counts for a Python package (last day, last week, last month) from pypistats.org. Gauges how popular a pip package is.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Exact PyPI package name, e.g. \"requests\"."
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
+]
